@@ -1,0 +1,21 @@
+[project]
+name = "zeendoc-or-extractor"
+version = "0.1.0"
+description = "Extraction des PV d'expertise Zeendoc et generation d'ordres de reparation."
+requires-python = ">=3.10"
+dependencies = [
+  "requests>=2.31.0",
+  "pypdf>=4.0.0",
+  "fastapi>=0.111.0",
+  "uvicorn[standard]>=0.30.0",
+]
+
+[project.scripts]
+zeendoc-or = "or_extractor.cli:main"
+zeendoc-or-api = "or_extractor.web_app:main"
+
+[tool.setuptools.packages.find]
+include = ["or_extractor*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

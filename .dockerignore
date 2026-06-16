@@ -1,0 +1,12 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+out
+debug-zeendoc
+source-pdf
+*.egg-info
+tests
+Zeendoc_RESTAPI.pdf
+openapi (2).yml

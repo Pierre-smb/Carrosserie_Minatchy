@@ -1,0 +1,2830 @@
+openapi: 3.0.3
+info:
+  title: Zeendoc REST API
+  version: 4.0.0
+
+servers:
+  - url: ../../api/{version}
+    variables:
+      version:
+        default: v4
+
+security:
+  - ZeendocSession: [ ]
+
+tags:
+  - name: Login
+    description: Authenticate a user and generate a session cookie
+
+  - name: Documents Linking
+    description: Operations related to document linking
+
+  - name: Documents Management
+    description: Operations related to document creation, update, deletion and state management
+
+  - name: Documents Search
+    description: Operations related to document search and filtering
+
+  - name: Documents Sharings
+    description: Operations related to sharing documents
+
+  - name: Dropdown List
+    description: Dropdown list item management
+
+  - name: Groups
+    description: Operations related to groups
+
+  - name: History Access
+    description: Log recovery, system log and document log
+
+  - name: Sources
+    description: Operations related to sources
+
+  - name: Users
+    description: Operations related to users
+
+paths:
+  /login:
+    post:
+      summary: Authenticates a user and returns a session cookie for subsequent requests.
+      description: |
+        This service allows to authenticate a user and generate a session cookie that can be used for the next calls. 
+        
+        This avoids having to enter the identifiers for each call to the WS.
+      tags:
+        - Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - login
+                - password
+              properties:
+                login:
+                  type: string
+                  description: Login ID
+                  example: john.doe@example.com
+                password:
+                  type: string
+                  format: password
+                  description: Plain text password
+                  example: "**********"
+      responses:
+        "200":
+          description: Authentification réussie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cookie:
+                    type: string
+                    description: Cookie de session à utiliser pour les requêtes suivantes
+                    example: "ZeenDoc=abc123xyz"
+                  cookieDuration:
+                    type: string
+                    description: Durée de validité du cookie (90% de session.gc_maxlifetime)
+                    example: "38880s"
+
+  /binders/{collId}/documents:
+    get:
+      summary: Retrieves document details and download links for PDF and original files.
+      operationId: getDocument
+      description: This service allows you to retrieve all the information related to a document, as well as a link to download the PDF and original versions of the document
+      tags:
+        - Documents Search
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - name: resId
+          in: query
+          description: |
+            Unique document ID for the specified binder. <br/>
+            Note: it is not necessary to specify ResId AND UploadId, one of the two is enough (but at least one of the two must be present)
+          schema:
+            type: integer
+            example: 1
+        - name: wantedColumns
+          in: query
+          description: |
+            List of indexes and properties of the document for which we want to retrieve the value. <br/>
+            String of characters with properties separated by commas. <br/>
+            If the setting is not present or empty, only returns document Res_Id and Coll_Id
+          schema:
+            $ref: "#/components/schemas/WantedColumns"
+        - name: comments
+          in: query
+          description: |
+            Indicator that allows to specify whether or not to retrieve the comments (+stamps) in the PDF version of the document. <br/> 
+            false or empty = the PDF file is retrieved without the comments/stamps <br/>
+            true = the PDF file is retrieved with the comments and stamps.
+          schema:
+            type: boolean
+            example: false
+        - name: uploadId
+          in: query
+          description: |
+            Unique document upload ID for the specified binder <br/>
+            Ex : Upload_Id=46PBolM5XnCThWNzDYUHK7s0k2ZJVfcI <br/>
+            Note: it is not necessary to specify ResId AND UploadId, one of the two is enough (but at least one of the two must be present)
+          schema:
+            type: string
+            example: ""
+        - name: lineConfigFileName
+          in: query
+          description: |
+            Configuration file to use to retrieve the lines extracted from the document (provided that a line extraction has been configured in the binder). <br/> 
+            Attention, document line extraction slows down the information retrieval. <br/>
+            Leave empty if document line extraction is not required.
+          schema:
+            type: string
+            example: ""
+        - name: urlIndependent
+          in: query
+          description: |
+            Defines the directory where thumbnails and documents are retrieved. <br/>
+            false: client-related directory. <br/>
+            true: shared directory across all clients.
+          schema:
+            type: boolean
+            example: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetDocumentResponse"
+
+    post:
+      summary: Sends a document through the processing chain.
+      operationId: uploadDoc
+      description: This service allows a document to be sent through the processing chain.
+      tags:
+        - Documents Management
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fileName
+                - base64Document
+                - hash
+              properties:
+                fileName:
+                  type: string
+                  description: |
+                    File name. Leave the extension in the name. <br/>
+                    Ex: Invoice_08_2020.pdf
+                  example: ""
+                base64Document:
+                  type: string
+                  description: Document content in base64.
+                  example: ""
+                hash:
+                  type: string
+                  description: Hash of the uploaded document content. Currently, the hash is sha3-256
+                  example: ""
+                sourceId:
+                  type: integer
+                  description: |
+                    The Id of the source which will upload the document. <br/>
+                    If it is not specified, the system checks whether a "WebServices" source exists to use it automatically. <br/>
+                    If no source of this type exists, it is automatically created before use.
+                  example: null
+                indexation:
+                  type: object
+                  description: Json of the index fields to apply at upload.
+                folder:
+                  type: string
+                  description: Directory, if the source is used by an agent
+                  default: ""
+                computerId:
+                  type: string
+                  description: Unique identifier of the calling station if the source is used by an agent
+                  default: ""
+      responses:
+        '200':
+          description: Document uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadId:
+                    type: string
+
+  /binders/{collId}/documents/{resId}:
+    delete:
+      summary: Deletes a document from a binder.
+      operationId: deleteDoc
+      description: |
+        This service allows to delete a document from a binder.
+        This service requires "docs_delete_doc" permission
+      tags:
+        - Documents Management
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+      responses:
+        '200':
+          description: Document deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Document deleted successfully"
+
+  /binders/{collId}/documents/{resId}/indexes:
+    patch:
+      summary: Updates a document’s indexing, only specified fields are modified.
+      operationId: updateDocPartial
+      description: |
+        This service allows to update a document indexing in a binder.
+        
+        Only the specified index fields are overwritten with the specified values, the others are left unchanged.
+      tags:
+        - Documents Management
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                indexList:
+                  type: array
+                  description: |
+                    An array of objects containing the following properties: <br/><br/>
+                    Id -> Unique identifier of the object in the binder (e.g.: 1, 2, 3, ...) <br/>
+                    Label -> Identifier of the index field to modify (Ex.: custom_f3) <br/>
+                    Value -> New value for the field In case of multivalued fields, it is possible to define several objects redefining the same field. It is possible to give a value of 1 or 2 to N_Status (for "indexed" and "to index").
+                  items:
+                    type: object
+                    properties:
+                      label:
+                        type: string
+                        example: ""
+                      value:
+                        type: string
+                        example: ""
+      responses:
+        '200':
+          description: Document updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Document updated successfully"
+
+    put:
+      summary: Resets all indexes and overwrites them with the provided values.
+      operationId: updateDocAll
+      description: |
+        This service allows to update a document indexing in a binder.
+        
+        All indexes are reset to zero and overwritten with the provided index values.
+      tags:
+        - Documents Management
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                indexList:
+                  type: array
+                  description: |
+                    An array of objects containing the following properties: <br/><br/>
+                    Id -> Unique identifier of the object in the binder (e.g.: 1, 2, 3, ...) <br/>
+                    Label -> Identifier of the index field to modify (Ex.: custom_f3) <br/>
+                    Value -> New value for the field In case of multivalued fields, it is possible to define several objects redefining the same field.
+                  items:
+                    type: object
+                    properties:
+                      label:
+                        type: string
+                        example: ""
+                      value:
+                        type: string
+                        example: ""
+      responses:
+        '200':
+          description: Document updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Document updated successfully"
+
+  /binders/{collId}/documents/{resId}/restore:
+    post:
+      summary: Restores a deleted document from a binder.
+      operationId: restoreDoc
+      description: This service allows to restore a document deleted from a binder.
+      tags:
+        - Documents Management
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+      responses:
+        '200':
+          description: Document restored successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Document restored successfully"
+
+  /binders/{collId}/documents/search:
+    post:
+      summary: Searches documents by criteria or saved search.
+      operationId: searchDocuments
+      description: This service allows to search all documents matching certain criteria (or matching a preset saved search).
+      tags:
+        - Documents Search
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchDocumentBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchDocumentsResponse"
+
+  /binders/{collId}/documents/count:
+    post:
+      summary: Returns the number of results for a search.
+      operationId: countDocuments
+      description: |
+        This service identifies the number of results of a search (or matching a preset search).
+        It is slightly faster than the previous service and called with a subset of arguments from the previous service.
+      tags:
+        - Documents Search
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CountDocumentBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CountDocumentsResponse"
+
+  /binders/{collId}/documents/{resId}/shares:
+    post:
+      summary: Enables public sharing of a document from a binder.
+      operationId: shareDoc
+      description: This service allows the public sharing of a document archived in a binder in a Zeendoc filing cabinet.
+      tags:
+        - Documents Sharings
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shareName:
+                  type: string
+                  description: Sharing name for the document
+                  example: Name
+                selectedVersion:
+                  type: string
+                  description: Possible choices PDF / Original
+                  example: PDF
+                  enum: [ PDF, Original ]
+                pageSelectionType:
+                  type: string
+                  description: Selection of all document pages value “ALL” (default if not specified) or only certain pages, value “SELECT”
+                  example: ALL
+                  enum: [ ALL, SELECT ]
+                selectedPages:
+                  type: string
+                  description: |
+                    All by default or only certain pages (e.g. 2-4, 3;7 or 2-4;7-9). <br/>
+                    Used in combination with Page_Selection_Type "SELECT". For all pages, must be left empty
+                  example: ""
+                sharingEndDate:
+                  type: string
+                  description: |
+                    Specifies the date until when the document sharing will be active. <br/>
+                    If not specified, the default duration is one month. <br/>
+                    ‘Y-m-d’ format Example ”2024-06-12” for the date 12 June 2024
+                  example: ""
+      responses:
+        '200':
+          description: Document shared successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      filename:
+                        type: string
+                        description: Shared file name
+                        example: basic_000.pdf
+                      url:
+                        type: string
+                        description: Link to the file
+                        example: https://zeendoc..
+                      nPartage:
+                        type: string
+                        description: Generated share number
+                        example: 1234
+                      sharindEndDate:
+                        type: string
+                        description: Sharing expiry date
+                        example: 2026-01-01
+
+  /binders/{collId}/documents/{resId}/shares/{shareId}:
+    delete:
+      summary: Deletes a previously created public share.
+      operationId: UnShareDoc
+      description: This service allows to delete a previously created public sharing.
+      tags:
+        - Documents Sharings
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+        - $ref: "#/components/parameters/ShareId"
+
+      responses:
+        '200':
+          description: Document shared successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  infos:
+                    type: string
+                    example: "Manually delete sharing. Sharing URL : https://zeendoc.."
+
+  /history-document/search:
+    post:
+      summary: Retrieves document history with filters and pagination.
+      operationId: getHistoryDoc
+      description: |
+        This service allows to retrieve the document history log.
+        - The available filters are: Start date / End date, user, binder, action.
+        - The sorting is always done on the event date parameter. You can select the sorting order.
+        - The "From" and "Count" parameters allow to specify a range to retrieve (maximum 1000 items at a time).
+        This service requires "view_doc_history" access (History: access to the document history).
+      tags:
+        - History Access
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dateStart:
+                  type: string
+                  example: "01/01/2026"
+                dateEnd:
+                  type: string
+                  example: "03/01/2026"
+                userId:
+                  type: string
+                  example: ""
+                collId:
+                  type: string
+                  example: ""
+                action:
+                  type: string
+                  example: "ADD_GROUP_EVENT"
+                order:
+                  type: string
+                  enum: [ ASC, DESC ]
+                  example: "ASC"
+                from:
+                  type: integer
+                  example: 0
+                count:
+                  type: integer
+                  example: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      nb:
+                        type: integer
+                        description: Number of events retrieved in the response.
+                        example: 50
+                      logs:
+                        type: array
+                        description: Events retrieved
+                        items:
+                          type: object
+                          properties:
+                            date:
+                              type: string
+                            user:
+                              type: string
+                            action:
+                              type: string
+                            collection:
+                              type: string
+                            comment:
+                              type: string
+                            document:
+                              type: string
+
+  /history-system/search:
+    post:
+      summary: Retrieves system history with filters and pagination.
+      operationId: getHistorySystem
+      description: |
+        This service allows to retrieve the system log.
+        - The available filters are: Start date / End date, user, binder, action.
+        - The sorting is always done on the event date parameter. You can select the sorting order.
+        - The "From" and "Count" parameters allow to specify a range to retrieve (maximum 1000 items at a time).
+        This service requires "view_system_history" access (History: access to the system history).
+      tags:
+        - History Access
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dateStart:
+                  type: string
+                  example: "01/01/2026"
+                dateEnd:
+                  type: string
+                  example: "03/01/2026"
+                userId:
+                  type: string
+                  example: ""
+                collId:
+                  type: string
+                  example: ""
+                action:
+                  type: string
+                  example: "ADD_GROUP_EVENT"
+                order:
+                  type: string
+                  enum: [ ASC, DESC ]
+                  example: "ASC"
+                from:
+                  type: integer
+                  example: 0
+                count:
+                  type: integer
+                  example: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      nb:
+                        type: integer
+                        description: Number of events retrieved in the response.
+                        example: 50
+                      logs:
+                        type: array
+                        description: Events retrieved
+                        items:
+                          type: object
+                          properties:
+                            date:
+                              type: string
+                            user:
+                              type: string
+                            action:
+                              type: string
+                            collection:
+                              type: string
+                            comment:
+                              type: string
+
+  /processing-files/{fileId}:
+    get:
+      summary: Searches in-process documents and returns their current status.
+      operationId: searchProcessingFiles
+      description: This service allows to search a client's documents currently in process and get relevant information such as its current processing status.
+      tags:
+        - Documents Search
+      parameters:
+        - name: fileId
+          in: path
+          description: ID of the file currently in process
+          required: true
+          schema:
+            type: string
+            example: "file_abc123"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      documents:
+                        type: object
+                        description: Informations about the documents currently in process.
+
+  /processing-files:
+    get:
+      summary: Lists in-process documents grouped by collId.
+      operationId: searchAllProcessingFile
+      description: This service allows you to list a client's documents currently in process grouped by coll_id.
+      tags:
+        - Documents Search
+      parameters:
+        - name: collId
+          in: query
+          description: Binder ID
+          schema:
+            type: string
+            example: "coll_1"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                properties:
+                  documents:
+                    type: object
+                    description: Informations about the documents currently in process
+
+  /binders/{collId}/saved-queries:
+    get:
+      summary: Lists accessible saved searches, optionally with result counts.
+      operationId: getSavedQueries
+      description: |
+        This service allows the identification of the saved searches accessible by the user. <br/>
+        - If `collId` is not specified correctly, the first binder found will be used, which may vary. It is strongly advised to specify it. <br/>
+        - `getNbResult` allows to also retrieve the number of documents matching each saved search (slightly longer response time).<br/>
+        This service requires "docs_search" permission.
+      tags:
+        - Documents Search
+      parameters:
+        - name: collId
+          in: path
+          description: Binder where to perform the search.
+          required: true
+          schema:
+            type: string
+            example: "coll_1"
+        - name: nbResult
+          in: query
+          description: |
+            Whether to also retrieve the number of documents matching each saved search.
+            
+            false = no, true = yes (slightly longer response time).
+          required: false
+          schema:
+            type: boolean
+            example: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                properties:
+                  savedQueries:
+                    type: object
+                    description: Informations about the saved queries
+
+  /binders/{collId}/fields/{customName}/autocomplete-search:
+    get:
+      summary: Retrieves matching autocomplete values for an index.
+      operationId: getAutocompleteValues
+      description: |
+        This service retrieves all values from an index with autocompletion that matches text already entered by the user.
+      tags:
+        - Documents Search
+      parameters:
+        - name: collId
+          in: path
+          description: Binder where to perform the search. It is strongly advised to specify it.
+          required: true
+          schema:
+            type: string
+            example: "coll_1"
+        - name: customName
+          in: path
+          description: Index field where to retrieve the possible values.
+          required: true
+          schema:
+            type: string
+            example: "custom_t1"
+        - name: term
+          in: query
+          description: Text entered by the user to match against.
+          required: true
+          schema:
+            type: string
+            example: "pro"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                properties:
+                  value:
+                    type: object
+                    description: Values from the index with autocompletion that match the text entered by the user
+
+  /binders/{collId}/send:
+    post:
+      summary: Sends documents via a template using a saved search or document list.
+      operationId: sendByModel
+      description: |
+        Trigger a sending based on a template, of a document list or a saved search result.
+        
+        At least one of the following must be provided: savedQueryId, savedQueryName, or resIds.
+        The argument priority is: savedQueryId > savedQueryName > resIds.
+      tags:
+        - Documents Management
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sendModel
+              properties:
+                sendModel:
+                  type: integer
+                  description: Template ID.
+                  example: 1
+                savedQueryId:
+                  type: integer
+                  description: Saved search ID.
+                  example: 1
+                savedQueryName:
+                  type: string
+                  description: Saved search name.
+                  example: "My saved search"
+                resIds:
+                  type: array
+                  description: Document list.
+                  items:
+                    type: integer
+                  example: [ 7074, 7075 ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                properties:
+                  modeEnvoi:
+                    type: string
+                    example: "New"
+                  action:
+                    type: string
+                    example: "EMAIL"
+                  modelName:
+                    type: string
+                    example: "test"
+                  version:
+                    type: string
+                    example: "PDF"
+
+  /binders/{collId}/documents/{resId}/folders:
+    get:
+      summary: Retrieves a document’s links.
+      operationId: getDocFolders
+      description: |
+        This service allows to retrieve the links of a document in a binder.
+        This service requires "edit_doc_folders" or "docs_search" permission.
+      tags:
+        - Documents Linking
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      folders:
+                        type: array
+                        description: Array of links associated to the document.
+                        items:
+                          type: object
+                          properties:
+                            nFolder:
+                              type: string
+                              description: Link ID
+                            name:
+                              type: string
+                              description: Link label
+                            nbDocs:
+                              type: string
+                              description: Number of linked documents
+
+    post:
+      summary: Adds links to a document.
+      operationId: setDocFolders
+      description: |
+        This service allows to add links to a document in a binder.
+        This service requires "edit_doc_folders" permission.
+      tags:
+        - Documents Linking
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - labels
+              properties:
+                labels:
+                  type: array
+                  description: List of the links to add.
+                  items:
+                    type: string
+                    description: Name of a link
+                  example: [ "folder_1", "folder_2", "folder_3" ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      foldersInsert:
+                        type: array
+                        description: Names of the folders where the document has been added.
+                        items:
+                          type: string
+  
+  /binders/{collId}/documents/{resId}/remove-from-folders:
+    post:
+      summary: Removes links from a document.
+      operationId: delDocFolders
+      description: |
+        This service allows to remove links to a document in a binder of a Zeendoc filing cabinet.
+        This service requires "edit_doc_folders" permission.
+      tags:
+        - Documents Linking
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                labels:
+                  type: array
+                  description: List of folder labels to remove.
+                  items:
+                    type: string
+                  example:
+                    - label1
+                    - label2
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      foldersDel:
+                        type: object
+                        description: |
+                          Links removed from the document. (Key: link ID, Value: link name)
+                        additionalProperties:
+                          type: string
+                        example:
+                          "{folderId}": "string"
+
+  /binders/{collId}/documents/{resId}/linked-docs:
+    get:
+      summary: Retrieves all documents linked to a given document.
+      operationId: getDocLinked
+      description: |
+        This service allows to retrieve all documents linked to a given document.
+        This service requires "docs_search" permission.
+      tags:
+        - Documents Linking
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - $ref: "#/components/parameters/ResId"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      docLink:
+                        type: array
+                        description: Array of linked documents with their binder.
+                        items:
+                          type: object
+                          properties:
+                            resId:
+                              type: integer
+                              description: Linked document ID
+                            collId:
+                              type: string
+                              description: Binder of the linked document
+
+  /folders/autocomplete-search:
+    get:
+      summary: Searches links by name pattern.
+      operationId: getDocFoldersAutocomplete
+      description: |
+        This service allows to retrieve all links with names similar to the searched pattern.
+        This service requires "edit_doc_folders" or "docs_search" permission
+      tags:
+        - Documents Linking
+      parameters:
+        - name: term
+          in: query
+          description: Search pattern to match against link names.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    description: |
+                      Matching links. (Key: link ID, Value: link name)
+                    additionalProperties:
+                      type: string
+
+  /groups:
+    get:
+      summary: Lists groups and their users with access type.
+      operationId: getGroupList
+      description: |
+        This service allows to list one or all groups and the users who have access to them.
+        
+        In the users field of the response, each user ID is associated with a value:
+        - 0 = added directly to the group
+        - 1 = access granted through a role
+        - 2 = both added directly and granted access through a role
+        
+        This service requires "admin_users" permission (user administration).
+      tags:
+        - Groups
+      parameters:
+        - name: groupId
+          in: query
+          description: Group ID to retrieve. If not specified, all groups are retrieved.
+          required: false
+          schema:
+            type: string
+        - name: collId
+          in: query
+          description: Binder ID to filter the groups.
+          required: false
+          schema:
+            type: string
+        - name: isTechAccount
+          in: query
+          description: Whether to retrieve groups for a technical account.
+          required: false
+          schema:
+            type: boolean
+            example: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      response:
+                        type: object
+                        description: |
+                          Groups indexed by their ID. Each group contains its description,
+                          binder ID, and the list of users with their access type.
+                        additionalProperties:
+                          type: object
+                          properties:
+                            groupDesc:
+                              type: string
+                              description: Group description
+                            collId:
+                              type: string
+                              description: Binder ID associated to the group
+                            users:
+                              type: object
+                              description: |
+                                Users in the group. (Key: user ID, Value: access type — 0: direct, 1: role, 2: both)
+                              additionalProperties:
+                                type: integer
+                                enum: [ 0, 1, 2 ]
+                              example:
+                                userId1: 1
+                                userId2: 0
+                                userId3: 2
+
+  /users/{userId}/add-to-groups:
+    post:
+      summary: Adds a user to groups.
+      operationId: addGroups
+      description: |
+        This service allows to add a user to a list of groups.
+
+        This service requires «admin_users» access (user administration).
+      tags:
+        - Groups
+      parameters:
+        - name: userId
+          in: path
+          description: User ID.
+          required: true
+          schema:
+            type: string
+        - name: isTechAccount
+          in: query
+          description: Whether the target user is a technical account.
+          schema:
+            type: boolean
+            example: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - groupIds
+              properties:
+                groupIds:
+                  type: array
+                  description: List of group IDs to add the user to. Each ID must only contain alphanumeric characters or underscores.
+                  items:
+                    type: string
+                  example: [ "Group_Id1", "Group_Id2" ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /users/{userId}/groups:
+    delete:
+      summary: Removes a user from groups.
+      operationId: removeGroups
+      description: |
+        This service allows to remove a user from a list of groups.
+
+        This service requires «admin_users» access (user administration).
+      tags:
+        - Groups
+      parameters:
+        - name: userId
+          in: path
+          description: User ID.
+          required: true
+          schema:
+            type: string
+        - name: isTechAccount
+          in: query
+          description: Whether the target user is a technical account.
+          required: false
+          schema:
+            type: boolean
+            example: false
+        - name: groupIds
+          in: query
+          description: Group IDs, separated by commas
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /users/{userId}/remove-from-groups:
+    post:
+      summary: Removes a user from multiple groups in large batches.
+      operationId: removeGroupsBatch
+      description: |
+        This service allows to remove a user from a list of groups.
+        
+        Use DELETE for smaller requests via query params.
+
+        This service requires «admin_users» access (user administration).
+      tags:
+        - Groups
+      parameters:
+        - name: userId
+          in: path
+          description: User ID.
+          required: true
+          schema:
+            type: string
+        - name: isTechAccount
+          in: query
+          description: Whether the target user is a technical account.
+          required: false
+          schema:
+            type: boolean
+            example: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - groupIds
+              properties:
+                groupIds:
+                  type: array
+                  description: List of group IDs to remove the user from.
+                  items:
+                    type: string
+                  example: [ "Group_Id1", "Group_Id2", "Group_Id3" ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /binders/{collId}/fields/{customName}/item-list:
+    get:
+      summary: Retrieves available dropdown list items.
+      operationId: getItemsList
+      description: |
+        This service retrieves the list of available dropdown list items.
+        
+        This service requires "admin_documents_types" permission (Dropdown List Administration).
+      tags:
+        - Dropdown List
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - name: customName
+          in: path
+          description: Unique identifier of the dropdown list index field from which the items must be retrieved.
+          required: true
+          schema:
+            type: string
+            example: "custom_n1"
+        - name: onlyDeletable
+          in: query
+          description: |
+            false = No effect. 
+            
+            true = Retrieve only items that are neither associated with non-deleted documents nor referenced by dependent dropdown lists.
+          required: false
+          schema:
+            type: boolean
+            example: false
+        - name: itemIds
+          in: query
+          description: Optional. An array of elements identified by their ID. Allows you to retrieve only the identified elements, with all their values.
+          required: false
+          schema:
+            type: array
+            items:
+              type: integer
+            example: [44, 45]
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      nb:
+                        type: integer
+                        description: Number of items returned.
+                      items:
+                        type: array
+                        description: List of items returned.
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            label:
+                              type: string
+                      action:
+                        type: string
+                      nClient:
+                        type: integer
+                      collId:
+                        type: string
+                      columnName:
+                        type: string
+
+    post:
+      summary: Adds items to a dropdown list.
+      operationId: addItemsList
+      description: |
+        This service allows to add items to a dropdown list.
+        
+        This service requires "admin_documents_types" permission (Dropdown List Administration).
+      tags:
+        - Dropdown List
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - name: customName
+          in: path
+          description: Unique identifier of the dropdown list index field from which the items must be retrieved.
+          required: true
+          schema:
+            type: string
+            example: "custom_n1"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - items
+              properties:
+                items:
+                  type: array
+                  description: An array of items to add.
+                  items:
+                    type: object
+                    required:
+                      - label
+                    properties:
+                      label:
+                        type: string
+                        description: Mandatory, item label
+                      parentId:
+                        type: integer
+                        description: Optional. Parent number.
+                      creditDebit:
+                        type: string
+                        description: Optional. Accounting allocation. "C" for credit, "D" for debit.
+                        enum: [ C, D ]
+                        example: "C"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      nb:
+                        type: integer
+                        description: Number of items actually added.
+                        example: 2
+                      items:
+                        type: array
+                        description: |
+                          List of items added (Status: Added) 
+                          
+                          List of items refused (Other Status)
+                        items:
+                          type: object
+                          properties:
+                            status:
+                              type: string
+                              description: Result for this item. "Added" if successful, other values indicate refusal reason.
+                            entry:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                  description: Always contains "Id" and "Label"
+                                label:
+                                  type: string
+                      action:
+                        type: string
+                        example: "Add"
+                      nClient:
+                        type: integer
+                        example: 413
+                      collId:
+                        type: string
+                      columnName:
+                        type: string
+
+    patch:
+      summary: Modifies dropdown list items.
+      operationId: updateItemsList
+      description: |
+        This service allows to modify items of a dropdown list.
+        
+        This service requires "admin_documents_types" permission (Dropdown List Administration).
+      tags:
+        - Dropdown List
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - name: customName
+          in: path
+          description: Unique identifier of the dropdown list index field from which the items must be retrieved.
+          required: true
+          schema:
+            type: string
+            example: "custom_n1"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - items
+              properties:
+                items:
+                  type: array
+                  description: List of items to update. Each item must have an id.
+                  items:
+                    type: object
+                    required:
+                      - id
+                    properties:
+                      id:
+                        type: integer
+                        description: Required. Unique identifier of the item to modify.
+                        example: 1
+                      label:
+                        type: string
+                        description: Optional. New item label.
+                      parentId:
+                        type: integer
+                        description: Optional. New parent item ID.
+                        example: 0
+                      creditDebit:
+                        type: string
+                        description: Optional. Accounting allocation. C for credit, D for debit.
+                        enum: [ C, D ]
+                        example: "C"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      nb:
+                        type: integer
+                        description: Number of items modified.
+                        example: 2
+                      items:
+                        type: array
+                        description: List of items updated or refused, with values before and after modification.
+                        items:
+                          type: object
+                          properties:
+                            Status:
+                              type: string
+                              description: Result for this item. "Updated" if successful, other values indicate refusal reason.
+                              example: "Updated"
+                            entry:
+                              type: object
+                              description: New values after modification.
+                              properties:
+                                id:
+                                  type: string
+                                label:
+                                  type: string
+                                parentId:
+                                  type: string
+                                creditDebit:
+                                  type: string
+                            originalEntry:
+                              type: object
+                              description: Original values before modification. Present only when Status is "Updated".
+                              properties:
+                                id:
+                                  type: string
+                                label:
+                                  type: string
+                                parentId:
+                                  type: string
+                                creditDebit:
+                                  type: string
+                      action:
+                        type: string
+                        example: "Update"
+                      nClient:
+                        type: integer
+                      collId:
+                        type: string
+                      columnName:
+                        type: string
+
+    delete:
+      summary: Removes dropdown list items, use for small sets.
+      operationId: deleteItemsList
+      description: |
+        This service allows to remove items from a dropdown list.
+
+        Use this DELETE route for a small number of items.
+        For bulk deletion, use the POST equivalent with a JSON body.
+
+        This service requires "admin_documents_types" permission (Dropdown List Administration).
+      tags:
+        - Dropdown List
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - name: customName
+          in: path
+          description: Unique identifier of the dropdown list index field.
+          required: true
+          schema:
+            type: string
+            example: "custom_n1"
+        - name: itemIds
+          in: query
+          description: List of item ids to delete.
+          required: true
+          schema:
+            type: array
+            items:
+              type: integer
+            example: [44, 45]
+          style: form
+          explode: false
+      responses:
+        '200':
+          $ref: '#/components/responses/DeleteItemsListResponse'
+
+  /binders/{collId}/fields/{customName}/remove-from-item-list:
+    post:
+      summary: Removes multiple dropdown list items via JSON body.
+      operationId: deleteItemsListbatch
+      description: |
+        This service allows to remove multiple items from a dropdown list using a JSON body.
+  
+        This route should be used when the number of items is too large for query parameters.
+  
+        This service requires "admin_documents_types" permission (Dropdown List Administration).
+      tags:
+        - Dropdown List
+      parameters:
+        - $ref: "#/components/parameters/CollId"
+        - name: customName
+          in: path
+          description: Unique identifier of the dropdown list index field.
+          required: true
+          schema:
+            type: string
+            example: "custom_n1"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - itemIds
+              properties:
+                itemIds:
+                  type: array
+                  description: List of item ids to delete.
+                  items:
+                    type: integer
+                  example: [ 44, 45, 46 ]
+      responses:
+        '200':
+          $ref: '#/components/responses/DeleteItemsListResponse'
+
+  /sources:
+    get:
+      summary: Retrieves all sources or a specific one by sourceId.
+      operationId: getSources
+      description: This service retrieves all available sources, or a specific one if sourceId is provided.
+      tags:
+        - Sources
+      parameters:
+        - name: sourceId
+          in: query
+          description: The identifier of the source to retrieve.
+          required: false
+          schema:
+            type: integer
+        - name: sourceTypeId
+          in: query
+          description: The number corresponding to the type of source wanted.
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Sources list retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceListResponse'
+
+    post:
+      summary: Creates a source.
+      operationId: createSource
+      description: |
+        This service allows to create a source.
+        
+        This service requires "docs_depot_agent" permission.
+      tags:
+        - Sources
+      requestBody:
+        $ref: "#/components/requestBodies/SourceBodyCreate"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sourceId:
+                    type: integer
+                    example: 123
+
+  /sources/{sourceId}:
+    patch:
+      summary: Edits an existing source.
+      operationId: editSource
+      description: |
+        This service allows to edit an existing source.
+        
+        This service requires "docs_depot_agent" permission.
+      tags:
+        - Sources
+      parameters:
+        - name: sourceId
+          in: path
+          description: ID of the source to modify.
+          required: true
+          schema:
+            type: integer
+            example: 42
+      requestBody:
+        $ref: "#/components/requestBodies/SourceBodyUpdate"
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sourceId:
+                    type: integer
+                    example: 123
+
+    delete:
+      summary: Deletes a source.
+      operationId: deleteSource
+      description: |
+        This service allows to delete a source.
+        
+        This service requires "docs_depot_agent" permission.
+      tags:
+        - Sources
+      parameters:
+        - name: sourceId
+          in: path
+          description: Id of the source to delete.
+          required: true
+          schema:
+            type: integer
+        - name: collId
+          in: query
+          description: Binder
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    type: string
+                    example: 'The source has been deleted.'
+
+  /users:
+    get:
+      summary: Lists users with their groups and roles.
+      operationId: getUserList
+      description: |
+        This service allows to lsit one or all users and their groups and roles.
+
+        This service requires "admin_users" access (user administration).
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: query
+          description: User ID to retrieve. If not specified, all users are retrieved.
+          required: false
+          schema:
+            type: string
+        - name: isTechAccount
+          in: query
+          schema:
+            type: string
+            enum: [ "true", "false" ]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsersResponse'
+
+    post:
+      summary: Creates a user in a filing cabinet.
+      operationId: createUser
+      description: |
+        This service allows to create a user in a filing cabinet.
+
+        ! This service requires "admin_users" access (user administration).
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserBody'
+      responses:
+        '200':
+          description: User created
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:
+                    type: string
+                    example: User created.
+                  userId:
+                    type: string
+                    example: 54e742339185c92fc4d9f0f673479e65
+
+  /users/{userId}:
+    patch:
+      summary: Edits a user in a filing cabinet.
+      operationId: editUser
+      description: |
+        This service allows to edit a user in a filing cabinet.
+
+        This service requires "admin_users" access (user administration).
+      tags:
+        - Users
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - name: isTechAccount
+          in: query
+          schema:
+            type: string
+            enum: [ "true", "false" ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserBody'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:
+                    type: string
+                    example: User modified.
+
+    delete:
+      summary: Deletes a user from a filing cabinet.
+      operationId: deleteUser
+      description: |
+        This service allows to delete a user from a filing cabinet.
+
+        This service requires "admin_users" access (user administration).
+      tags:
+        - Users
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - name: isTechAccount
+          in: query
+          schema:
+            type: string
+            enum: [ "true", "false" ]
+      responses:
+        '200':
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:
+                    type: string
+                    example: User deleted.
+
+  /users/{userId}/enable:
+    patch:
+      summary: Enables a user in a filing cabinet.
+      operationId: changeUserStateEnable
+      description: |
+        This service allows to enable a user in a filing cabinet.
+
+        This service requires "admin_users" access (user administration).
+      tags:
+        - Users
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - name: isTechAccount
+          in: query
+          schema:
+            type: string
+            enum: [ "true", "false" ]
+      responses:
+        '200':
+          description: State changed
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:
+                    type: string
+                  enabled:
+                    type: integer
+
+  /users/{userId}/disable:
+    patch:
+      summary: Disables a user in a filing cabinet.
+      operationId: changeUserStateDisable
+      description: |
+        This service allows to disable a user in a filing cabinet.
+
+        This service requires "admin_users" access (user administration).
+      tags:
+        - Users
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - name: isTechAccount
+          in: query
+          schema:
+            type: string
+            enum: [ "true", "false" ]
+      responses:
+        '200':
+          description: State changed
+          content:
+            application/json:
+              schema:
+                properties:
+                  message:
+                    type: string
+                  enabled:
+                    type: integer
+
+  /users/{userId}/password:
+    patch:
+      summary: Resets a user’s password and emails a new one.
+      operationId: resetPassword
+      description: |
+        This service allows a user's password to be reset and a new one sent to them by email.
+
+        This service requires "admin_users" access (user administration).
+      tags:
+        - Users
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - name: isTechAccount
+          in: query
+          schema:
+            type: string
+            enum: [ "true", "false" ]
+      responses:
+        '200':
+          description: State changed
+          content:
+            application/json:
+              schema:
+                properties:
+                  response:
+                    type: string
+                    example: Password reset.
+
+  /roles:
+    get:
+      summary: Lists roles with their users and groups.
+      operationId: getRolesList
+      description: |
+        This service allows to list one or all roles, the users who have access to them, and the groups associated with these roles.
+
+        This service requires «admin_users» access (user administration).
+      tags:
+        - Users
+      parameters:
+        - name: roleId
+          in: query
+          description: Role ID to retrieve. If not specified, all roles are retrieved.
+          required: false
+          schema:
+            type: integer
+            example: 1
+        - name: collId
+          in: query
+          description: The binder ID to filter the roles.
+          required: false
+          schema:
+            type: string
+            example: "coll_1"
+        - name: isTechAccount
+          in: query
+          description: Whether to retrieve roles for a technical account.
+          required: false
+          schema:
+            type: boolean
+            example: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/RoleResponse"
+
+  /users/{userId}/add-to-roles:
+    post:
+      summary: Adds a user to roles.
+      operationId: addRoles
+      description: |
+        This service allows to add a user to a list of roles.
+
+        This service requires «admin_users» access (user administration).
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          description: User ID.
+          required: true
+          schema:
+            type: string
+        - name: isTechAccount
+          in: query
+          description: Whether the target user is a technical account.
+          required: false
+          schema:
+            type: boolean
+            example: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - roleIds
+              properties:
+                roleIds:
+                  type: array
+                  description: List of role IDs to add the user to. Each ID must be a positive integer.
+                  items:
+                    type: string
+                    minimum: 1
+                  example: [ 1, 2, 3 ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /users/{userId}/roles:
+    delete:
+      summary: Removes roles from a user.
+      operationId: removeRoles
+      description: |
+        Remove a list of roles from a user (small list via query param).
+
+        Requires «admin_users» access.
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: isTechAccount
+          in: query
+          required: false
+          schema:
+            type: boolean
+            example: false
+        - name: roleIds
+          in: query
+          required: true
+          description: Comma-separated role IDs.
+          schema:
+            type: array
+            items:
+              type: integer
+            example: [ 1,2 ]
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /users/{userId}/remove-from-roles:
+    post:
+      summary: Removes roles from a user in large batches.
+      operationId: removeRolesBatch
+      description: |
+        This service allows to remove a list of roles from a user.
+
+        This service requires «admin_users» access (user administration).
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          description: User ID.
+          required: true
+          schema:
+            type: string
+        - name: isTechAccount
+          in: query
+          description: Whether the target user is a technical account.
+          required: false
+          schema:
+            type: boolean
+            example: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - roleIds
+              properties:
+                roleIds:
+                  type: array
+                  description: List of role IDs to remove the user from. Each ID must be a positive integer.
+                  items:
+                    type: integer
+                    minimum: 1
+                  example: [ 1, 2, 3 ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResult"
+
+  /context:
+    get:
+      summary: Authenticates user and retrieves binders, rights, and configsets.
+      operationId: getRights
+      description: |
+        This service allows:
+
+        1. to test the Login IDs
+
+        2. to retrieve the document binders to which the user has access
+
+        3. to retrieve the binder index plan
+
+        4. to retrieve the user's rights within these binders.
+
+        This service also allows you to retrieve certain configsets (from a whitelist) that apply to the filing cabinet and its binders.
+      tags:
+        - Login
+      parameters:
+        - name: getConfigSets
+          in: query
+          schema:
+            type: boolean
+            example: false
+          description: Whether to load config sets
+      responses:
+        '200':
+          description: User context retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetRightsResponse'
+
+components:
+  securitySchemes:
+    ZeendocSession:
+      type: apiKey
+      in: cookie
+      name: Cookie
+
+  parameters:
+    CollId:
+      name: collId
+      in: path
+      required: true
+      description: Binder
+      schema:
+        type: string
+        example: coll_1
+
+    ResId:
+      name: resId
+      in: path
+      required: true
+      description: Document identifier within the Zeendoc binder
+      schema:
+        type: integer
+
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        
+    ShareId:
+      name: shareId
+      in: path
+      required: true
+      description: Sharing number visible from the user interface
+      schema:
+        type: integer
+        
+  requestBodies:
+    SourceBodyCreate:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - type: object
+                properties:
+                  collId:
+                    type: string
+                    description: Binder.
+                    example: "coll_1"
+              - $ref: "#/components/schemas/SourceInput"
+
+    SourceBodyUpdate:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/SourceInput"
+
+  schemas:
+    SuccessResult:
+      type: object
+      properties:
+        result:
+          type: string
+          example: "Success"
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        department:
+          type: string
+        email:
+          type: string
+          format: email
+        isTechAccount:
+          type: boolean
+          example: false
+
+    UsersResponse:
+      type: object
+      properties:
+        response:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/UserRead'
+          example:
+            "{userId}":
+              firstname: "string"
+              lastname: "string"
+              department: "string"
+              mail: "user@example.com"
+              enabled: 0
+              groups:
+                - "{groupName}": 0
+              roles:
+                - "string"
+
+    UserRead:
+      type: object
+      properties:
+        firstname:
+          type: string
+        lastname:
+          type: string
+        department:
+          type: string
+        mail:
+          type: string
+          format: email
+        enabled:
+          type: integer
+          enum: [ 0, 1 ]
+        groups:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: integer
+              description: |
+                Indicates how a user was granted access to a group: directly added (0), via a role (1), or both (2)
+        roles:
+          type: array
+          description: Liste des identifiants de rôles
+          items:
+            type: string
+
+    CreateUserBody:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - email
+      properties:
+        firstName:
+          type: string
+          description: User’s first name.
+        lastName:
+          type: string
+          description: User’s last name.
+        email:
+          type: string
+          description: |
+            User’s email.
+            
+            It must be different from the email addresses already present in the filing cabinet.
+          format: email
+        department:
+          type: string
+          description: User's entity.
+        isTechAccount:
+          type: string
+          enum: [ true, false ]
+          example: false
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        field:
+          type: string
+        error:
+          type: string
+
+    UpdateUserBody:
+      type: object
+      description: At least one of firstName, lastName, email, or department is required
+      properties:
+        firstName:
+          type: string
+          description: User’s first name. If this field is empty, the current first name is used.
+        lastName:
+          type: string
+          description: User’s last name. If this field is empty, the current last name is used.
+        email:
+          type: string
+          description: User’s email. If this field is empty, the current email address is used.
+          format: email
+        department:
+          type: string
+          description: |
+            User’s entity. If this field is empty, the current entity is used 
+            
+            If this field is set to «null», the entity will be empty.
+
+    GetDocumentResponse:
+      allOf:
+        - type: object
+          required: [ Document ]
+          properties:
+            document:
+              $ref: "#/components/schemas/document"
+
+    SearchDocumentsResponse:
+      allOf:
+        - type: object
+          required: [ nbDocs, stats, document ]
+          properties:
+            nbDocs:
+              type: integer
+            stats:
+              type: array
+              items: { }
+            document:
+              type: array
+              items:
+                $ref: "#/components/schemas/document"
+
+    CountDocumentsResponse:
+      allOf:
+        - type: object
+          required: [ nbDocs ]
+          properties:
+            nbDocs:
+              type: integer
+
+    document:
+      type: object
+      required: [ resId, collId, properties, indexes ]
+      properties:
+        resId:
+          type: integer
+        collId:
+          type: string
+        properties:
+          type: array
+          items: { }
+        indexes:
+          type: array
+          items: { }
+      additionalProperties: true
+
+    BaseSearchCountDocumentsBody:
+      type: object
+      properties:
+        indexList:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchIndexDefinition"
+        strictMode:
+          type: integer
+          description: |
+            false = for «Text» search criteria, the documents returned will be those containing the provided value (default). <br/>
+            true = for «Text» search criteria, the documents returned will be those whose indexing value is equal to the value provided.
+          example: 0
+          enum: [ 0, 1 ]
+        orderCol:
+          type: string
+          description: Field on which to sort the results (default = creation_date)
+          example: Creation_Date
+        order:
+          type: string
+          enum: [ ASC, DESC ]
+          description: ASC = ascending sort (default if the sort field is not a date field) DESC = descending sort (default if the sort field is a date field)
+          example: DESC
+        savedQueryId:
+          type: integer
+          description: Identifiant de la recherche enregistrée à rappeler (il faut soit indiquer un ou plusieurs critères de recherche, soit rappeler une recherche enregistré, mais un mix des deux ne prend en compte que la recherche enregistrée).
+        savedQueryName:
+          type: string
+          description: Nom de la recherche enregistrée à rappeler (il faut soit indiquer un ou plusieurs critères de recherche, soit rappeler une recherche enregistré, mais un mix des deux ne prend en compte que la recherche enregistrée).
+          example: ""
+        queryOperator:
+          type: string
+          enum: [ AND, OR ]
+          description: Operator between the different search criteria. “AND” (default) or “OR”
+
+    CountDocumentBody:
+      allOf:
+        - $ref: '#/components/schemas/BaseSearchCountDocumentsBody'
+        - type: object
+          properties:
+            fuzzy:
+              type: string
+              description: |
+                Level of fuzziness for the document content search Only valid if the search field is «plain_text». <br/><br/>
+                Exact or empty (default) = Only documents containing the specified term are searched <br/>
+                Flou = Documents containing similar terms to the specified one are returned <br/>
+                FlouFlou = Documents containing similar terms to the similar ones are also returned.
+              example: ""
+
+    SearchDocumentBody:
+      allOf:
+        - $ref: '#/components/schemas/BaseSearchCountDocumentsBody'
+        - type: object
+          properties:
+            from:
+              type: integer
+              minimum: 0
+              description: Indicates from which document to retrieve the results.
+              example: 0
+            nbResults:
+              type: integer
+              minimum: 1
+              description: Indicates the maximum number of results to retrieve. By default 50
+              example: 50
+            wantedColumns:
+              $ref: "#/components/schemas/WantedColumns"
+            value1:
+              type: string
+              description: This is the value that will replace our wildcard in a saved search used for Select2Search
+              example: ""
+            urlIndependent:
+              type: boolean
+              description: "Defines the directory where thumbnails and documents are retrieved. Different from 1: retrieval from a client-related directory. 1: retrieval from a directory common to all clients."
+
+    WantedColumns:
+      type: string
+      example: ""
+
+    SearchIndexDefinition:
+      allOf:
+        - $ref: "#/components/schemas/IndexDefinition"
+        - type: object
+          properties:
+            operator:
+              type: string
+              example: "EQUALS"
+            startValue:
+              type: string
+              example: ""
+            endValue:
+              type: string
+              example: ""
+            fuzzy:
+              type: string
+              example: ""
+
+    IndexDefinition:
+      type: object
+      properties:
+        id:
+          type: integer
+        label:
+          type: string
+          example: ""
+        value:
+          type: string
+          example: ""
+
+    RoleResponse:
+      type: object
+      properties:
+        collId:
+          type: string
+        roleTitle:
+          type: string
+        groups:
+          type: array
+          items:
+            type: string
+        users:
+          type: array
+          items:
+            type: string
+
+    SourceListResponse:
+      type: object
+      properties:
+        nbSources:
+          type: integer
+          example: 52
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+
+    Source:
+      type: object
+      properties:
+        sourceId:
+          type: string
+        title:
+          type: string
+          nullable: true
+        collId:
+          type: string
+        userId:
+          type: string
+        sourceTypeId:
+          type: string
+        parameters:
+          nullable: true
+        indexation:
+          nullable: true
+        ocrLevel:
+          type: string
+        automaticReadingLevel:
+          type: string
+        barCodeDetectionLevel:
+          type: string
+        separatorDetectionLevel:
+          type: string
+        stampSeparatorDetectionLevel:
+          type: string
+        markerDetectionLevel:
+          type: string
+        pdfaConvertLevel:
+          type: string
+        lastDocumentDate:
+          type: string
+        compression:
+          type: string
+        urlClient:
+          type: string
+        user:
+          type: string
+
+    GetRightsResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            userId: { type: string }
+            firstName: { type: string }
+            lastName: { type: string }
+            mail: { type: string }
+            department: { type: string, nullable: true }
+            mailSurDepot: { type: integer }
+            derniereConnexion: { type: string }
+            prefs: { type: object }
+            estSuperAdmin: { type: integer }
+        client:
+          type: object
+          properties:
+            status:
+              type: array
+              items: { type: string }
+            configSets:
+              type: array
+              items:
+                type: object
+                properties:
+                  idClientSetting: { type: integer }
+                  idSetting: { type: integer }
+                  label: { type: string }
+                  labelIHM: { type: string }
+                  typeAffectation: { type: string }
+                  idAffectation: { type: string }
+                  value: { }
+
+        collectionsOrdonnees:
+          type: array
+          items: { type: string }
+
+        collections:
+          type: array
+          items:
+            type: object
+            properties:
+              collId: { type: string }
+              label: { type: string }
+
+              index:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    index_Id: { type: string }
+                    label: { type: string }
+                    mandatory: { type: integer }
+                    is_ListChoice: { type: integer }
+                    is_Date: { type: integer }
+                    is_Numeric: { type: integer }
+                    is_Autocomplete: { type: integer }
+                    is_Multivalued: { type: integer }
+                    type: { type: string }
+                    possible_Value:
+                      type: object
+                      additionalProperties: true
+
+              ConfigSets:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    Id_Client_Setting: { type: integer }
+                    Id_Setting: { type: integer }
+                    Label: { type: string }
+                    Label_IHM: { type: string }
+                    Type_Affectation: { type: string }
+                    Id_Affectation: { type: string }
+                    Value: { }
+              Rights:
+                type: object
+                properties:
+                  Can_Upload_Doc: { type: integer }
+                  Can_Search_Docs: { type: integer }
+                  Can_View_Doc: { type: integer }
+        Service:
+          type: object
+          description: Available features for the user
+
+    SourceInput:
+      type: object
+      properties:
+        sourceTypeId:
+          type: integer
+          description: |
+            ID of the source type.
+            
+            Cannot be changed for an existing source.
+            
+            Available values:
+            - 2: HTML
+            - 3: Emails
+            - 51: Agent
+            - 54: FTP
+            - 55: Chorus Pro
+            - 56: Invoice collectors
+            - 57: Form
+          example: 2
+
+        title:
+          type: string
+          description: Source title.
+          example: ""
+
+        parameters:
+          type: object
+          description: Source settings.
+          properties:
+            emailDepositAddress:
+              type: string
+              description: |
+                Mandatory for email sources.
+                
+                Cannot be changed once set.
+              example: ""
+            emailDepositType:
+              type: string
+              description: |
+                Mandatory for email sources.
+                
+                Type of data retrieved from the email.
+                
+                Available values:
+                - TXT: Text
+                - PJ: Attachments
+                - IMAGES: Images larger than 2KB
+                - TXT_PJ: Text + Attachments
+                - IMAGES_PJ: Images larger than 2KB + attachments
+              example: "TXT"
+            techUserChorusLogin:
+              type: string
+              description: For Chorus Pro sources.
+              example: ""
+            techUserChorusPassword:
+              type: string
+              description: For Chorus Pro sources.
+              example: ""
+
+        processing:
+          type: object
+          description: Source processing configuration.
+          properties:
+            ocrLevel:
+              type: integer
+              description: |
+                OCR processing.
+                
+                Available values:
+                - 0: None
+                - 1: Yes, with automatic detection
+                - 2: Yes, even on digital documents
+                - 3: Yes, with automatic detection, no automatic rotation
+              example: 1
+
+            automaticReadingLevel:
+              type: integer
+              description: |
+                IDP processing.
+                
+                Available values:
+                - 1: Yes
+                - 2: Yes + automatic cutting
+                - 3: Yes + cumulation
+                - 4: Yes + cutting + recognised page deletion
+                - 5: No
+              example: 5
+
+            barCodeDetectionLevel:
+              type: integer
+              description: |
+                Barcode detection.
+                
+                Available values:
+                - 1: Yes
+                - 2: Yes + cutting on NEWDOC
+                - 3: Yes, preferably on original if PDF version
+                - 5: No
+              example: 5
+
+            separatorDetectionLevel:
+              type: integer
+              description: |
+                Separator / blank page detection.
+                
+                Available values:
+                - 0: No
+                - 1: Yes
+              example: 0
+
+            stampSeparatorDetectionLevel:
+              type: integer
+              description: |
+                Separator stamps.
+                
+                Available values:
+                - 0: No
+                - 1: Yes
+              example: 0
+
+            markerDetectionLevel:
+              type: integer
+              description: |
+                Highlighter cut.
+                
+                Available values:
+                - 0: No
+                - 1: Yes
+              example: 0
+
+            pdfaConvertLevel:
+              type: integer
+              description: |
+                PDF/A validation/conversion.
+                
+                Available values:
+                - 0: No
+                - 1: Yes
+                - 2: Yes, new method
+              example: 0
+
+            compression:
+              type: integer
+              description: |
+                Zeendoc PDF compression.
+                
+                Available values:
+                - 0: None
+                - 1: High resolution / low compression
+                - 2: Medium resolution / medium compression
+                - 3: Low resolution / high compression
+              example: 0
+
+        indexation:
+          type: object
+          description: Source pre-indexing.
+          additionalProperties: true
+          example:
+            custom_n1: ""
+            custom_n2: ""
+
+  responses:
+    DeleteItemsListResponse:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              nb:
+                type: integer
+                description: Number of items deleted.
+                example: 2
+              items:
+                type: array
+                description: List of items deleted or refused.
+                items:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: "Deleted"
+                    entry:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          example: "123"
+              action:
+                type: string
+                example: "DELETE"
+              nClient:
+                type: integer
+                example: 413
+              collId:
+                type: string
+                example: "coll_1"
+              columnName:
+                type: string
+                example: "custom_n1"
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'
+    Forbidden:
+      description: Forbidden - insufficient permissions
