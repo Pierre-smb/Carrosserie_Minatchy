@@ -202,7 +202,7 @@ def _render_pdf(pages: list[PdfPage]) -> bytes:
     if logo_id:
         objects.insert(0, _image_object(logo_id, LOGO_PATH, 674, 260))
     if vehicle_id:
-        objects.insert(0, _image_object(vehicle_id, VEHICLE_IMPACT_PATH, 791, 900))
+        objects.insert(0, _image_object(vehicle_id, VEHICLE_IMPACT_PATH, 682, 760))
     objects.insert(0, _obj(pages_id, f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode("ascii")))
     objects.insert(0, _obj(catalog_id, f"<< /Type /Catalog /Pages {pages_id} 0 R >>".encode("ascii")))
 
@@ -334,17 +334,17 @@ def _signature_boxes(page: PdfPage, x: int, y: int) -> None:
 def _vehicle_impact_diagram(page: PdfPage, x: int, y: int) -> None:
     width = A4_WIDTH - MARGIN * 2
     height = VEHICLE_DIAGRAM_HEIGHT
-    _fill_rect(page, x, y - height, width, height, "0.98 0.99 1.00")
+    _fill_rect(page, x, y - height, width, height, "1 1 1")
     _rect(page, x, y - height, width, height, color="0.82 0.86 0.90")
     _fill_rect(page, x, y - 28, width, 28, "0.10 0.45 0.60")
     _text(page, x + 12, y - 18, "Reperage des points de choc", size=10, bold=True, color="1 1 1")
     _text(page, x + width - 198, y - 18, "Entourer les zones concernees", size=7, color="0.88 0.95 0.98")
 
     if VEHICLE_IMPACT_PATH.exists():
-        image_height = 132
-        image_width = 116
+        image_height = 118
+        image_width = 106
         image_x = x + (width - image_width) / 2
-        image_y = y - 158
+        image_y = y - 164
         page.commands.append(
             f"q {image_width} 0 0 {image_height} {image_x:.1f} {image_y:.1f} cm /ImVehicle Do Q"
         )
